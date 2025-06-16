@@ -1,0 +1,55 @@
+# Arquivos de ambiente
+.env
+.env.*
+
+# Arquivos Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Arquivos de IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+
+# Arquivos de log
+*.log
+logs/
+
+# Arquivos de cache
+.cache/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Arquivos de ambiente virtual
+venv/
+env/
+ENV/
+
+# Arquivos de blockchain
+node_modules/
+.hardhat/
+artifacts/
+cache/
+typechain/
+typechain-types/ 

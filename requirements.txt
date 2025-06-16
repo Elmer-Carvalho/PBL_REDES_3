@@ -1,0 +1,7 @@
+fastapi==0.95.2
+uvicorn==0.22.0
+web3==5.31.3
+pydantic==1.10.7
+python-dotenv==1.0.0
+py-solc-x==1.1.1
+requests==2.31.0
