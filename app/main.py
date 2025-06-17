@@ -4,7 +4,7 @@ from web3 import Web3
 import os
 from solcx import compile_standard, install_solc
 import json
-from typing import List, Dict
+from typing import List, Dict, Optional
 import time
 import logging
 from datetime import datetime, timedelta
@@ -294,6 +294,27 @@ class PagamentoResponse(BaseModel):
     data: str
     hora: str
 
+class TesteConcorrenciaRequest(BaseModel):
+    nomePosto: str = Field(..., description="Nome do posto para testar")
+    numReservas: int = Field(..., ge=1, le=20, description="Número de reservas simultâneas (1-20)")
+    prefixoClientes: str = Field(default="Cliente", description="Prefixo para nomes dos clientes")
+
+class ResultadoReserva(BaseModel):
+    cliente: str
+    carro: str
+    sucesso: bool
+    erro: Optional[str] = None
+    transaction_hash: Optional[str] = None
+
+class TesteConcorrenciaResponse(BaseModel):
+    posto: str
+    totalTentativas: int
+    sucessos: int
+    falhas: int
+    tempoTotal: float
+    resultados: List[ResultadoReserva]
+    resumo: str
+
 @app.post("/postos", response_model=Dict[str, str])
 async def adicionar_posto(posto: Posto):
     """
@@ -470,6 +491,118 @@ async def health_check():
         }
     except Exception as e:
         logger.error(f"Erro no health check: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/teste-concorrencia", response_model=TesteConcorrenciaResponse)
+async def teste_concorrencia(request: TesteConcorrenciaRequest):
+    """
+    Endpoint para testar concorrência solicitando múltiplas reservas simultaneamente.
+    """
+    import asyncio
+    import time
+    try:
+        logger.info(f"Iniciando teste de concorrência para posto: {request.nomePosto}")
+        logger.info(f"Número de reservas simultâneas: {request.numReservas}")
+
+        # Verificar se o posto existe
+        postos = contract.functions.listarPostos().call()
+        posto_encontrado = None
+        for posto in postos:
+            if posto[0] == request.nomePosto:
+                posto_encontrado = posto
+                break
+        if not posto_encontrado:
+            raise HTTPException(status_code=404, detail=f"Posto '{request.nomePosto}' não encontrado")
+        if posto_encontrado[2]:  # posto.ocupado
+            raise HTTPException(status_code=400, detail=f"Posto '{request.nomePosto}' já está ocupado")
+
+        # Função para criar uma reserva individual
+        async def criar_reserva_individual(cliente: str, carro: str) -> ResultadoReserva:
+            try:
+                nonce = w3.eth.get_transaction_count(os.getenv('DEPLOYMENT_ADDRESS'))
+                transaction = contract.functions.criarReserva(
+                    cliente,
+                    carro,
+                    request.nomePosto
+                ).build_transaction({
+                    'chainId': int(os.getenv('NETWORK_ID')),
+                    'gas': int(os.getenv('GAS_LIMIT')),
+                    'gasPrice': w3.eth.gas_price,
+                    'nonce': nonce,
+                })
+                signed_txn = w3.eth.account.sign_transaction(transaction, os.getenv('DEPLOYMENT_PRIVATE_KEY'))
+                tx_hash = w3.eth.send_raw_transaction(signed_txn.rawTransaction)
+                w3.eth.wait_for_transaction_receipt(tx_hash)
+                return ResultadoReserva(
+                    cliente=cliente,
+                    carro=carro,
+                    sucesso=True,
+                    transaction_hash=tx_hash.hex()
+                )
+            except Exception as e:
+                return ResultadoReserva(
+                    cliente=cliente,
+                    carro=carro,
+                    sucesso=False,
+                    erro=str(e)
+                )
+
+        # Criar lista de reservas
+        reservas = []
+        for i in range(request.numReservas):
+            cliente = f"{request.prefixoClientes}{i+1}"
+            carro = f"Carro{i+1}"
+            reservas.append(criar_reserva_individual(cliente, carro))
+
+        # Executar reservas simultaneamente
+        inicio = time.time()
+        resultados = await asyncio.gather(*reservas, return_exceptions=True)
+        fim = time.time()
+
+        # Processar resultados
+        resultados_processados = []
+        sucessos = 0
+        falhas = 0
+        for i, resultado in enumerate(resultados):
+            if isinstance(resultado, Exception):
+                resultados_processados.append(ResultadoReserva(
+                    cliente=f"{request.prefixoClientes}{i+1}",
+                    carro=f"Carro{i+1}",
+                    sucesso=False,
+                    erro=str(resultado)
+                ))
+                falhas += 1
+            else:
+                resultados_processados.append(resultado)
+                if resultado.sucesso:
+                    sucessos += 1
+                else:
+                    falhas += 1
+
+        # Gerar resumo
+        if sucessos == 1 and falhas == request.numReservas - 1:
+            resumo = "✅ SISTEMA FUNCIONANDO PERFEITAMENTE: Apenas uma reserva foi aceita"
+        elif sucessos == 0:
+            resumo = "❌ PROBLEMA: Nenhuma reserva foi aceita"
+        elif sucessos > 1:
+            resumo = f"❌ PROBLEMA CRÍTICO: {sucessos} reservas foram aceitas simultaneamente"
+        else:
+            resumo = f"⚠️ RESULTADO INESPERADO: {sucessos} sucessos, {falhas} falhas"
+
+        logger.info(f"Teste de concorrência concluído: {sucessos} sucessos, {falhas} falhas")
+        return TesteConcorrenciaResponse(
+            posto=request.nomePosto,
+            totalTentativas=request.numReservas,
+            sucessos=sucessos,
+            falhas=falhas,
+            tempoTotal=round(fim - inicio, 2),
+            resultados=resultados_processados,
+            resumo=resumo
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Erro no teste de concorrência: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 if __name__ == "__main__":
