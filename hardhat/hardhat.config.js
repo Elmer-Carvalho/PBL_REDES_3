@@ -27,7 +27,7 @@ module.exports = {
         count: 10,
         accountsBalance: "10000000000000000000000",
       },
-      loggingEnabled: false,
+      loggingEnabled: true,
     },
   },
   paths: {

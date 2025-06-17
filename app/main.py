@@ -20,6 +20,18 @@ app = FastAPI(
     version="1.0.0"
 )
 
+CONTRACT_ADDRESS_FILE = "/app/contract_address.txt"
+
+def get_contract_address():
+    if os.path.exists(CONTRACT_ADDRESS_FILE):
+        with open(CONTRACT_ADDRESS_FILE, "r") as f:
+            return f.read().strip()
+    return None
+
+def save_contract_address(address):
+    with open(CONTRACT_ADDRESS_FILE, "w") as f:
+        f.write(address)
+
 # Configuração do Web3
 w3 = Web3(Web3.HTTPProvider(os.getenv('HARDHAT_URL')))
 
@@ -188,7 +200,7 @@ async def popular_dados_teste(contract):
                 signed_txn = w3.eth.account.sign_transaction(transaction, os.getenv('DEPLOYMENT_PRIVATE_KEY'))
                 tx_hash = w3.eth.send_raw_transaction(signed_txn.rawTransaction)
                 w3.eth.wait_for_transaction_receipt(tx_hash)
-                
+                ''''''
                 logger.info(f"Reserva criada com sucesso para {nome_cliente} no posto {nome_posto}")
             except Exception as e:
                 logger.error(f"Erro ao criar reserva: {str(e)}")
@@ -197,8 +209,56 @@ async def popular_dados_teste(contract):
     except Exception as e:
         logger.error(f"Erro durante população de dados de teste: {str(e)}")
 
-# Deploy do contrato na inicialização
-contract = deploy_contract()
+# Lógica para deploy ou conexão ao contrato
+contract_address = get_contract_address()
+abi = None
+contract = None
+
+if contract_address:
+    # Conectar ao contrato já existente
+    with open('/app/contracts/PostosAbastecimento.sol', 'r') as file:
+        contract_source = file.read()
+    compiled_sol = compile_standard(
+        {
+            "language": "Solidity",
+            "sources": {"PostosAbastecimento.sol": {"content": contract_source}},
+            "settings": {
+                "outputSelection": {
+                    "*": {"*": ["abi", "metadata", "evm.bytecode", "evm.sourceMap"]}
+                }
+            },
+        },
+        solc_version="0.8.19",
+    )
+    abi = json.loads(compiled_sol["contracts"]["PostosAbastecimento.sol"]["PostosAbastecimento"]["metadata"])["output"]["abi"]
+    contract = w3.eth.contract(address=contract_address, abi=abi)
+else:
+    if os.getenv("API_DEPLOYER", "false").lower() == "true":
+        # Só a api1 faz o deploy
+        contract = deploy_contract()
+        save_contract_address(contract.address)
+    else:
+        # Outras instâncias aguardam o deploy
+        while not os.path.exists(CONTRACT_ADDRESS_FILE):
+            print("Aguardando deploy do contrato pela instância principal...")
+            time.sleep(2)
+        contract_address = get_contract_address()
+        with open('/app/contracts/PostosAbastecimento.sol', 'r') as file:
+            contract_source = file.read()
+        compiled_sol = compile_standard(
+            {
+                "language": "Solidity",
+                "sources": {"PostosAbastecimento.sol": {"content": contract_source}},
+                "settings": {
+                    "outputSelection": {
+                        "*": {"*": ["abi", "metadata", "evm.bytecode", "evm.sourceMap"]}
+                    }
+                },
+            },
+            solc_version="0.8.19",
+        )
+        abi = json.loads(compiled_sol["contracts"]["PostosAbastecimento.sol"]["PostosAbastecimento"]["metadata"])["output"]["abi"]
+        contract = w3.eth.contract(address=contract_address, abi=abi)
 
 # Popular dados de teste
 @app.on_event("startup")

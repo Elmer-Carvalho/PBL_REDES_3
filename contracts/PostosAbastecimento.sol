@@ -58,8 +58,16 @@ contract PostosAbastecimento {
      * @param id Índice do posto no array
      * @param nome Nome do posto
      * @param dataCadastro Data de cadastro
+     * @param blockNumber Número do bloco
+     * @param transactionHash Hash da transação
      */
-    event PostoAdicionado(uint256 indexed id, string nome, uint256 dataCadastro);
+    event PostoAdicionado(
+        uint256 indexed id,
+        string nome,
+        uint256 dataCadastro,
+        uint256 blockNumber,
+        bytes32 transactionHash
+    );
 
     /**
      * @dev Evento emitido quando uma nova reserva é feita
@@ -68,8 +76,18 @@ contract PostosAbastecimento {
      * @param nomeCarro Nome do carro
      * @param nomePosto Nome do posto
      * @param dataReserva Data da reserva
+     * @param blockNumber Número do bloco
+     * @param transactionHash Hash da transação
      */
-    event ReservaCriada(uint256 indexed id, string nomeCliente, string nomeCarro, string nomePosto, uint256 dataReserva);
+    event ReservaCriada(
+        uint256 indexed id,
+        string nomeCliente,
+        string nomeCarro,
+        string nomePosto,
+        uint256 dataReserva,
+        uint256 blockNumber,
+        bytes32 transactionHash
+    );
 
     /**
      * @dev Evento emitido quando um novo pagamento é registrado
@@ -80,6 +98,8 @@ contract PostosAbastecimento {
      * @param valor Valor do pagamento
      * @param data Data do pagamento
      * @param hora Hora do pagamento
+     * @param blockNumber Número do bloco
+     * @param transactionHash Hash da transação
      */
     event PagamentoRegistrado(
         uint256 indexed id,
@@ -88,7 +108,9 @@ contract PostosAbastecimento {
         string nomePosto,
         uint256 valor,
         uint256 data,
-        uint256 hora
+        uint256 hora,
+        uint256 blockNumber,
+        bytes32 transactionHash
     );
 
     /**
@@ -104,7 +126,13 @@ contract PostosAbastecimento {
         postos.push(Posto(_nome, dataCadastro, false));
         postoPorNome[_nome] = id + 1; // +1 para diferenciar de 0 (não encontrado)
         
-        emit PostoAdicionado(id, _nome, dataCadastro);
+        emit PostoAdicionado(
+            id,
+            _nome,
+            dataCadastro,
+            block.number,
+            blockhash(block.number - 1)
+        );
     }
 
     /**
@@ -156,7 +184,18 @@ contract PostosAbastecimento {
             horaAtual
         ));
 
-        emit ReservaCriada(id, _nomeCliente, _nomeCarro, _nomePosto, dataReserva);
+        bytes32 txHash = blockhash(block.number - 1);
+
+        emit ReservaCriada(
+            id,
+            _nomeCliente,
+            _nomeCarro,
+            _nomePosto,
+            dataReserva,
+            block.number,
+            txHash
+        );
+
         emit PagamentoRegistrado(
             pagamentoIdCounter,
             _nomeCliente,
@@ -164,7 +203,9 @@ contract PostosAbastecimento {
             _nomePosto,
             valorPagamento,
             dataAtual,
-            horaAtual
+            horaAtual,
+            block.number,
+            txHash
         );
 
         pagamentoIdCounter++;
